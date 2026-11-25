@@ -553,6 +553,44 @@ public actor QBittorrentClient {
         try await call("torrents/removeTrackers", form: [("hash", hash), ("urls", urls.joined(separator: "|"))])
     }
 
+    public func renameFolder(_ hash: String, oldPath: String, newPath: String) async throws {
+        try await call("torrents/renameFolder", form: [("hash", hash), ("oldPath", oldPath), ("newPath", newPath)])
+    }
+
+    public func editTracker(_ hash: String, from old: String, to new: String) async throws {
+        try await call("torrents/editTracker", form: [("hash", hash), ("url", old), ("origUrl", old), ("newUrl", new)])
+    }
+
+    /// HTTP web seeds of a torrent.
+    public func webSeeds(_ hash: String) async throws -> [String] {
+        let data = try await call(.get, "torrents/webseeds", query: [("hash", hash)])
+        let list = try HTTPClient.decode([JSONValue].self, from: data, path: "webseeds")
+        return list.compactMap { $0["url"]?.stringValue }
+    }
+    public func addWebSeeds(_ hash: String, urls: [String]) async throws {
+        try await call("torrents/addWebSeeds", form: [("hash", hash), ("urls", urls.joined(separator: "|"))])
+    }
+    public func removeWebSeeds(_ hash: String, urls: [String]) async throws {
+        try await call("torrents/removeWebSeeds", form: [("hash", hash), ("urls", urls.joined(separator: "|"))])
+    }
+
+    /// Peers as "ip:port".
+    public func addPeers(_ hashes: [String], peers: [String]) async throws {
+        try await call("torrents/addPeers", form: [("hashes", hashes.joined(separator: "|")), ("peers", peers.joined(separator: "|"))])
+    }
+    public func banPeers(_ peers: [String]) async throws {
+        try await call("transfer/banPeers", form: [("peers", peers.joined(separator: "|"))])
+    }
+
+    /// The .torrent file of a torrent.
+    public func exportTorrent(_ hash: String) async throws -> Data {
+        try await call(.get, "torrents/export", query: [("hash", hash)])
+    }
+
+    public func setDownloadPath(_ h: [String], _ path: String) async throws {
+        try await call("torrents/setDownloadPath", form: [("id", hashes(h)), ("path", path)])
+    }
+
     public func peers(_ hash: String) async throws -> [QBPeer] {
         let r = peerRid[hash] ?? 0
         let data = try await call(.get, "sync/torrentPeers", query: [("hash", hash), ("rid", "\(r)")])
@@ -585,7 +623,7 @@ public actor QBittorrentClient {
     // MARK: Adding
 
     public func add(urls: [String], torrentFiles: [(name: String, data: Data)] = [], options: QBAddOptions) async throws {
-        let boundary = "arrcade-\(UUID().uuidString)"
+        let boundary = "pilothouse-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))

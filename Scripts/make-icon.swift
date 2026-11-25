@@ -1,4 +1,4 @@
-// Renders the Arrcade app icon (1024×1024 master + all macOS sizes).
+// Renders the Pilothouse app icon (1024×1024 master + all macOS sizes).
 // Usage: swift Scripts/make-icon.swift <output .appiconset directory>
 import AppKit
 import CoreGraphics

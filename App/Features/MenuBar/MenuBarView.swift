@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var app
@@ -77,7 +77,7 @@ struct MenuBarView: View {
             }
             Divider()
             HStack {
-                Button("Open Arrcade") { open(nil) }
+                Button("Open Pilothouse") { open(nil) }
                 Spacer()
                 SettingsLink { Image(systemName: "gearshape") }
                 Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("Quit")

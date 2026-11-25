@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct MovieDetailView: View {
     @Bindable var store: RadarrStore

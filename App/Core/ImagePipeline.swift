@@ -21,7 +21,7 @@ nonisolated final class ImagePipeline: @unchecked Sendable {
 
     private init() {
         let cfg = URLSessionConfiguration.default
-        let dir = URL.cachesDirectory.appending(path: "arrcade-images")
+        let dir = URL.cachesDirectory.appending(path: "pilothouse-images")
         cfg.urlCache = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 1024 * 1024 * 1024, directory: dir)
         cfg.requestCachePolicy = .returnCacheDataElseLoad
         cfg.httpMaximumConnectionsPerHost = 8

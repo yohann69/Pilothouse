@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "ArrcadeKit",
+    name: "PilothouseKit",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "ArrcadeKit", targets: ["ArrcadeKit"])
+        .library(name: "PilothouseKit", targets: ["PilothouseKit"])
     ],
     targets: [
         .target(
-            name: "ArrcadeKit",
+            name: "PilothouseKit",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
-            name: "ArrcadeKitTests",
-            dependencies: ["ArrcadeKit"],
+            name: "PilothouseKitTests",
+            dependencies: ["PilothouseKit"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]

@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 enum MovieFilter: String, CaseIterable, Identifiable {
     case all, monitored, unmonitored, missing, downloaded, upcoming, cutoffUnmet
@@ -250,7 +250,10 @@ struct MoviesView: View {
     }
 }
 
-struct MovieRoute: Hashable { let id: Int }
+struct MovieRoute: Hashable {
+    let id: Int
+    var instance: UUID? = nil
+}
 
 nonisolated extension RadarrMovie {
     var sortKey: String { sortTitle ?? title.lowercased() }

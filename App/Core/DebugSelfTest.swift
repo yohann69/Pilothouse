@@ -1,12 +1,12 @@
 #if DEBUG
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
-/// Debug-only: ARRCADE_SELFTEST=1 loads every store the UI uses and prints what each screen would show, then quits.
+/// Debug-only: PILOTHOUSE_SELFTEST=1 loads every store the UI uses and prints what each screen would show, then quits.
 enum DebugSelfTest {
     @MainActor
     static func runIfRequested() {
-        guard ProcessInfo.processInfo.environment["ARRCADE_SELFTEST"] != nil else { return }
+        guard ProcessInfo.processInfo.environment["PILOTHOUSE_SELFTEST"] != nil else { return }
         Task { @MainActor in
             let app = AppModel.shared
             func log(_ s: String) { FileHandle.standardOutput.write(Data((s + "\n").utf8)) }

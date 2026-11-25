@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct CalendarEntry: Identifiable, Hashable {
     enum Kind: Hashable { case movie(Int), episode(seriesId: Int) }
@@ -12,6 +12,7 @@ struct CalendarEntry: Identifiable, Hashable {
     let monitored: Bool
     let poster: [URL?]
     let releaseType: String?
+    var instance: UUID? = nil
 
     var color: Color {
         if hasFile { return .green }
@@ -48,10 +49,10 @@ struct CalendarView: View {
             }
             .navigationTitle("Calendar")
             .navigationDestination(for: MovieRoute.self) { r in
-                if let s = app.radarr { MovieDetailView(store: s, movieId: r.id) }
+                if let s = r.instance.flatMap({ app.radarrStores[$0] }) ?? app.radarr { MovieDetailView(store: s, movieId: r.id) }
             }
             .navigationDestination(for: SeriesRoute.self) { r in
-                if let s = app.sonarr { SeriesDetailView(store: s, seriesId: r.id) }
+                if let s = r.instance.flatMap({ app.sonarrStores[$0] }) ?? app.sonarr { SeriesDetailView(store: s, seriesId: r.id) }
             }
             .toolbar {
                 ToolbarItemGroup {
@@ -82,30 +83,30 @@ struct CalendarView: View {
         let (start, end) = range
         var out: [CalendarEntry] = []
         var err: String?
-        if let r = app.radarr {
+        for r in app.allRadarr {
             do {
                 let movies = try await r.client.calendar(start: start, end: end, unmonitored: showUnmonitored)
                 for m in movies {
                     let candidates: [(Date?, String)] = [(m.inCinemas, "In Cinemas"), (m.digitalRelease, "Digital"), (m.physicalRelease, "Physical")]
                     for (d, label) in candidates {
                         guard let d, d >= start, d <= end else { continue }
-                        out.append(CalendarEntry(id: "m\(m.id ?? 0)-\(label)", date: d, title: m.title, subtitle: label,
+                        out.append(CalendarEntry(id: "\(r.config.id)m\(m.id ?? 0)-\(label)", date: d, title: m.title, subtitle: label,
                                                  kind: .movie(m.id ?? 0), hasFile: m.downloaded, monitored: m.monitored ?? true,
-                                                 poster: r.posterURLs(m, width: 185), releaseType: label))
+                                                 poster: r.posterURLs(m, width: 185), releaseType: label, instance: r.config.id))
                     }
                 }
             } catch { err = error.localizedDescription }
         }
-        if let s = app.sonarr {
+        for s in app.allSonarr {
             do {
                 let eps = try await s.client.calendar(start: start, end: end, unmonitored: showUnmonitored)
                 for e in eps {
                     guard let d = e.airDateUtc else { continue }
                     let series = e.series ?? s.series(id: e.seriesId)
-                    out.append(CalendarEntry(id: "e\(e.id)", date: d, title: series?.title ?? "Episode",
+                    out.append(CalendarEntry(id: "\(s.config.id)e\(e.id)", date: d, title: series?.title ?? "Episode",
                                              subtitle: "\(e.code) · \(e.title ?? "TBA")", kind: .episode(seriesId: e.seriesId),
                                              hasFile: e.hasFile ?? false, monitored: e.monitored,
-                                             poster: series.map { s.posterURLs($0, width: 185) } ?? [], releaseType: e.finaleType.map { "\($0.capitalized) finale" }))
+                                             poster: series.map { s.posterURLs($0, width: 185) } ?? [], releaseType: e.finaleType.map { "\($0.capitalized) finale" }, instance: s.config.id))
                 }
             } catch { err = error.localizedDescription }
         }
@@ -228,8 +229,8 @@ struct EntryLink<Label: View>: View {
     @ViewBuilder var label: () -> Label
     var body: some View {
         switch entry.kind {
-        case .movie(let id): NavigationLink(value: MovieRoute(id: id), label: label)
-        case .episode(let sid): NavigationLink(value: SeriesRoute(id: sid), label: label)
+        case .movie(let id): NavigationLink(value: MovieRoute(id: id, instance: entry.instance), label: label)
+        case .episode(let sid): NavigationLink(value: SeriesRoute(id: sid, instance: entry.instance), label: label)
         }
     }
 }

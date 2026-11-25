@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 /// User-customizable preferences (AppStorage keys).
 enum Prefs {

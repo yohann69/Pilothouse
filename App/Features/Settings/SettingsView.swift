@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 import UniformTypeIdentifiers
 
 enum ConnectionTester {
@@ -26,196 +26,6 @@ enum ConnectionTester {
             let v = try await c.version()
             _ = try await c.sync()
             return "qBittorrent \(v)"
-        }
-    }
-}
-
-struct SettingsView: View {
-    var body: some View {
-        TabView {
-            Tab("Servers", systemImage: "server.rack") { ServersSettings() }
-            Tab("General", systemImage: "gearshape") { GeneralSettings() }
-            Tab("Appearance", systemImage: "paintbrush") { AppearanceSettings() }
-            Tab("Sidebar", systemImage: "sidebar.left") { SidebarSettings() }
-        }
-        .frame(width: 760, height: 560)
-    }
-}
-
-struct ImportBackupButton: View {
-    @Environment(AppModel.self) private var app
-    @State private var showImporter = false
-    @State private var report: String?
-
-    var body: some View {
-        Button { showImporter = true } label: { Label("Import nzb360 Backup…", systemImage: "square.and.arrow.down") }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder, .data, .xml], allowsMultipleSelection: false) { result in
-                guard case .success(let urls) = result, let url = urls.first else { return }
-                importBackup(url)
-            }
-            .alert("Backup Imported", isPresented: Binding(get: { report != nil }, set: { if !$0 { report = nil } })) {
-                Button("OK") { report = nil }
-            } message: { Text(report ?? "") }
-    }
-
-    private func importBackup(_ url: URL) {
-        let access = url.startAccessingSecurityScopedResource()
-        defer { if access { url.stopAccessingSecurityScopedResource() } }
-        do {
-            var target = url
-            // Picking a file inside the backup folder: use its folder so we also read the indexers file.
-            if !url.hasDirectoryPath { target = url.deletingLastPathComponent() }
-            let backup = try NZB360Backup.load(from: target)
-            let configs = backup.serviceConfigs()
-            guard !configs.isEmpty else { app.flash("No servers found in that backup.", .error); return }
-            for c in configs {
-                var merged = c
-                if let existing = app.config(c.kind) { merged.id = existing.id }
-                app.upsert(merged)
-            }
-            Task {
-                var lines: [String] = []
-                for c in configs {
-                    do { lines.append("✓ \(try await ConnectionTester.test(c))") }
-                    catch { lines.append("✗ \(c.kind.displayName): \(error.localizedDescription)") }
-                }
-                report = "Imported \(configs.count) servers.\n\n" + lines.joined(separator: "\n") +
-                    (lines.contains { $0.hasPrefix("✗") } ? "\n\nFix unreachable servers in Settings › Servers." : "")
-            }
-        } catch {
-            app.flash(error.localizedDescription, .error)
-        }
-    }
-}
-
-struct ServersSettings: View {
-    @Environment(AppModel.self) private var app
-    @State private var selected: ServiceKind = .radarr
-
-    var body: some View {
-        HStack(spacing: 0) {
-            List(ServiceKind.allCases, selection: Binding(get: { selected }, set: { if let v = $0 { selected = v } })) { kind in
-                HStack {
-                    Image(systemName: kind.symbol).foregroundStyle(kind.tint).frame(width: 20)
-                    Text(kind.displayName)
-                    Spacer()
-                    StatusDot(color: app.isConfigured(kind) ? .green : app.config(kind) != nil ? .orange : .secondary.opacity(0.4))
-                }
-                .tag(kind)
-            }
-            .listStyle(.sidebar)
-            .frame(width: 190)
-            .safeAreaInset(edge: .bottom) {
-                ImportBackupButton().buttonStyle(.glass).padding(10)
-            }
-            Divider()
-            ServerForm(kind: selected).id(selected)
-        }
-    }
-}
-
-struct ServerForm: View {
-    let kind: ServiceKind
-    @Environment(AppModel.self) private var app
-    @State private var config: ServiceConfig
-    @State private var testing = false
-    @State private var result: Result<String, Error>?
-    @State private var revealKey = false
-
-    init(kind: ServiceKind) {
-        self.kind = kind
-        _config = State(initialValue: AppModel.shared.config(kind) ?? ServiceConfig(kind: kind))
-    }
-
-    private var dirty: Bool { config != (app.config(kind) ?? ServiceConfig(id: config.id, kind: kind)) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                SwiftUI.Section {
-                    Toggle("Enabled", isOn: $config.enabled)
-                    TextField("Name", text: $config.name)
-                    TextField("URL", text: $config.url, prompt: Text("http://192.168.1.10:\(kind.defaultPort)"))
-                    TextField("Fallback URL", text: $config.fallbackURL, prompt: Text("Optional — e.g. remote https://… used when the primary is unreachable"))
-                } header: { Text("Connection") }
-                SwiftUI.Section("Authentication") {
-                    if kind.usesAPIKey {
-                        HStack {
-                            if revealKey { TextField("API Key", text: $config.apiKey) } else { SecureField("API Key", text: $config.apiKey) }
-                            Button { revealKey.toggle() } label: { Image(systemName: revealKey ? "eye.slash" : "eye") }.buttonStyle(.borderless)
-                        }
-                        Text(apiKeyHint).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if kind.usesLogin {
-                        TextField("Username", text: $config.username, prompt: Text("Leave empty if auth is bypassed for your LAN"))
-                        SecureField("Password", text: $config.password)
-                    }
-                }
-                SwiftUI.Section("Advanced") {
-                    Toggle("Allow self-signed / invalid certificates", isOn: $config.allowInvalidCertificates)
-                    Stepper("Timeout: \(Int(config.timeout)) s", value: $config.timeout, in: 5...120, step: 5)
-                    ForEach($config.customHeaders) { $h in
-                        HStack {
-                            TextField("Header", text: $h.name)
-                            TextField("Value", text: $h.value)
-                            Button { config.customHeaders.removeAll { $0.id == h.id } } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless)
-                        }
-                    }
-                    Button { config.customHeaders.append(.init(name: "", value: "")) } label: { Label("Add Custom Header", systemImage: "plus") }
-                }
-                if let result {
-                    SwiftUI.Section {
-                        switch result {
-                        case .success(let s): Label(s, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                        case .failure(let e): Label(e.localizedDescription, systemImage: "xmark.octagon.fill").foregroundStyle(.red).textSelection(.enabled)
-                        }
-                    }
-                }
-            }
-            .formStyle(.grouped)
-            HStack {
-                if app.config(kind) != nil {
-                    Button("Remove", role: .destructive) {
-                        app.remove(kind)
-                        config = ServiceConfig(kind: kind)
-                        result = nil
-                    }
-                }
-                Spacer()
-                Button {
-                    test()
-                } label: {
-                    if testing { ProgressView().controlSize(.small) } else { Label("Test", systemImage: "bolt.horizontal") }
-                }
-                .buttonStyle(.glass)
-                .disabled(testing || config.url.isEmpty)
-                Button("Save") {
-                    app.upsert(config)
-                    app.flash("\(kind.displayName) saved")
-                    test()
-                }
-                .buttonStyle(.glassProminent)
-                .keyboardShortcut("s", modifiers: .command)
-                .disabled(!dirty)
-            }
-            .padding()
-        }
-    }
-
-    private var apiKeyHint: String {
-        switch kind {
-        case .seerr: "Seerr › Settings › General › API Key"
-        default: "\(kind.displayName) › Settings › General › Security › API Key"
-        }
-    }
-
-    private func test() {
-        testing = true
-        result = nil
-        let c = config
-        Task {
-            do { result = .success(try await ConnectionTester.test(c)) } catch { result = .failure(error) }
-            testing = false
         }
     }
 }
@@ -262,13 +72,13 @@ struct GeneralSettings: View {
                 Toggle("Request in 4K by default (Seerr)", isOn: $default4K)
             }
             SwiftUI.Section("Integration") {
-                Button("Make Arrcade the default app for magnet links") {
+                Button("Make Pilothouse the default app for magnet links") {
                     if let id = Bundle.main.bundleIdentifier {
                         LSSetDefaultHandlerForURLScheme("magnet" as CFString, id as CFString)
-                        app.flash("Arrcade now opens magnet links")
+                        app.flash("Pilothouse now opens magnet links")
                     }
                 }
-                Text("Settings are stored in ~/Library/Application Support/Arrcade/services.json (readable only by your user).").font(.caption).foregroundStyle(.secondary)
+                Text("Settings are stored in ~/Library/Application Support/Pilothouse/services.json (readable only by your user).").font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -296,7 +106,7 @@ struct AppearanceSettings: View {
             SwiftUI.Section("Images") {
                 Toggle("Load artwork from my servers first (instead of TMDB/TVDB CDNs)", isOn: $preferLocal)
                 Button("Clear Image Cache") {
-                    try? FileManager.default.removeItem(at: URL.cachesDirectory.appending(path: "arrcade-images"))
+                    try? FileManager.default.removeItem(at: URL.cachesDirectory.appending(path: "pilothouse-images"))
                 }
             }
         }

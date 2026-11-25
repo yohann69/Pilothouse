@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct ArrSystemSnapshot {
     var status: ArrSystemStatus?
@@ -9,26 +9,49 @@ struct ArrSystemSnapshot {
     var error: String?
 }
 
+/// One *arr server shown on the System screen.
+struct ArrEndpoint: Identifiable {
+    let id: UUID
+    let kind: ServiceKind
+    let name: String
+    let client: ArrClient
+}
+
+/// What a logs sheet reads from.
+struct LogTarget: Identifiable {
+    let id: UUID
+    let kind: ServiceKind
+    let name: String
+    var arr: ArrClient?
+    var qb: QBittorrentClient?
+}
+
 struct SystemView: View {
     @Environment(AppModel.self) private var app
-    @State private var snapshots: [ServiceKind: ArrSystemSnapshot] = [:]
-    @State private var seerrStatus: SeerrStatus?
-    @State private var logsFor: ServiceKind?
-    @State private var confirmRestart: ServiceKind?
+    @State private var snapshots: [UUID: ArrSystemSnapshot] = [:]
+    @State private var seerrStatus: [UUID: Result<SeerrStatus, Error>] = [:]
+    @State private var logsFor: LogTarget?
+    @State private var confirmRestart: ArrEndpoint?
     @State private var running = Set<String>()
 
-    private var arrKinds: [ServiceKind] { [.radarr, .sonarr, .prowlarr].filter { app.isConfigured($0) } }
+    private var endpoints: [ArrEndpoint] {
+        app.allRadarr.map { ArrEndpoint(id: $0.config.id, kind: .radarr, name: $0.name, client: $0.client) }
+        + app.allSonarr.map { ArrEndpoint(id: $0.config.id, kind: .sonarr, name: $0.name, client: $0.client) }
+        + app.allProwlarr.map { ArrEndpoint(id: $0.config.id, kind: .prowlarr, name: $0.name, client: $0.client) }
+    }
+
+    private var allConfigs: [ServiceConfig] { ServiceKind.allCases.flatMap { app.instances($0) } }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                    ForEach(ServiceKind.allCases.filter { app.isConfigured($0) }) { kind in
-                        ConnectionTile(kind: kind, version: version(kind), error: snapshots[kind]?.error)
+                    ForEach(allConfigs) { c in
+                        ConnectionTile(config: c, version: version(c), error: error(c))
                     }
                 }
-                ForEach(arrKinds) { kind in serviceCard(kind) }
-                if let t = app.torrents { qbCard(t) }
+                ForEach(endpoints) { serviceCard($0) }
+                ForEach(app.allTorrents, id: \.config.id) { qbCard($0) }
             }
             .padding(20)
         }
@@ -36,35 +59,37 @@ struct SystemView: View {
         .toolbar { ToolbarItem { Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") } } }
         .task { await load() }
         .focusedSceneValue(\.refreshAction) { Task { await load() } }
-        .sheet(item: $logsFor) { LogsSheet(kind: $0) }
-        .confirmationDialog("Restart \(confirmRestart?.displayName ?? "")?", isPresented: Binding(get: { confirmRestart != nil }, set: { if !$0 { confirmRestart = nil } })) {
+        .sheet(item: $logsFor) { LogsSheet(target: $0) }
+        .confirmationDialog("Restart \(confirmRestart?.name ?? "")?", isPresented: Binding(get: { confirmRestart != nil }, set: { if !$0 { confirmRestart = nil } })) {
             Button("Restart", role: .destructive) {
-                if let k = confirmRestart, let c = client(k) { app.run("\(k.displayName) is restarting") { try await c.restart() } }
+                if let e = confirmRestart { app.run("\(e.name) is restarting") { try await e.client.restart() } }
             }
         }
     }
 
-    private func version(_ kind: ServiceKind) -> String? {
-        switch kind {
-        case .qbittorrent: app.torrents?.version
-        case .seerr: seerrStatus?.version
-        default: snapshots[kind]?.status?.version
+    private func version(_ c: ServiceConfig) -> String? {
+        switch c.kind {
+        case .qbittorrent: app.torrentStores[c.id]?.version
+        case .seerr: (try? seerrStatus[c.id]?.get())?.version
+        default: snapshots[c.id]?.status?.version
         }
     }
 
-    private func client(_ k: ServiceKind) -> ArrClient? {
-        switch k {
-        case .radarr: app.radarr?.client
-        case .sonarr: app.sonarr?.client
-        case .prowlarr: app.prowlarr?.client
-        default: nil
+    private func error(_ c: ServiceConfig) -> String? {
+        switch c.kind {
+        case .qbittorrent: return app.torrentStores[c.id]?.state.error
+        case .seerr:
+            if case .failure(let e)? = seerrStatus[c.id] { return e.localizedDescription }
+            return nil
+        default: return snapshots[c.id]?.error
         }
     }
 
     private func load() async {
-        await withTaskGroup(of: (ServiceKind, ArrSystemSnapshot).self) { g in
-            for k in arrKinds {
-                guard let c = client(k) else { continue }
+        await withTaskGroup(of: (UUID, ArrSystemSnapshot).self) { g in
+            for e in endpoints {
+                let c = e.client
+                let id = e.id
                 g.addTask {
                     var s = ArrSystemSnapshot()
                     do {
@@ -75,17 +100,20 @@ struct SystemView: View {
                         let (hh, dd, tt) = await (h, d, t)
                         s.health = hh ?? []; s.disks = dd ?? []; s.tasks = tt ?? []
                     } catch { s.error = error.localizedDescription }
-                    return (k, s)
+                    return (id, s)
                 }
             }
-            for await (k, s) in g { snapshots[k] = s }
+            for await (id, s) in g { snapshots[id] = s }
         }
-        seerrStatus = try? await app.seerr?.client.status()
+        for st in app.allSeerr {
+            do { seerrStatus[st.config.id] = .success(try await st.client.status()) } catch { seerrStatus[st.config.id] = .failure(error) }
+        }
     }
 
-    private func serviceCard(_ kind: ServiceKind) -> some View {
-        let snap = snapshots[kind]
-        return GlassCard(title: kind.displayName, symbol: kind.symbol, tint: kind.tint) {
+    private func serviceCard(_ ep: ArrEndpoint) -> some View {
+        let snap = snapshots[ep.id]
+        let kind = ep.kind
+        return GlassCard(title: ep.name, symbol: kind.symbol, tint: kind.tint) {
             if let e = snap?.error {
                 Label(e, systemImage: "wifi.exclamationmark").foregroundStyle(.red)
             } else if let s = snap?.status {
@@ -96,8 +124,8 @@ struct SystemView: View {
                     KeyValueMini("Branch", s.branch ?? "—")
                     if s.isDocker == true { KeyValueMini("Runtime", "Docker") }
                     Spacer()
-                    Button("Logs") { logsFor = kind }.buttonStyle(.glass)
-                    Button("Restart") { confirmRestart = kind }.buttonStyle(.glass)
+                    Button("Logs") { logsFor = LogTarget(id: ep.id, kind: kind, name: ep.name, arr: ep.client) }.buttonStyle(.glass)
+                    Button("Restart") { confirmRestart = ep }.buttonStyle(.glass)
                 }
                 if !(snap?.health ?? []).isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -124,12 +152,12 @@ struct SystemView: View {
                                 Spacer()
                                 Text("every \(Fmt.duration(t.interval * 60))").font(.caption).foregroundStyle(.secondary)
                                 Text("last \(Fmt.relative(t.lastExecution))").font(.caption).foregroundStyle(.secondary).frame(width: 130, alignment: .trailing)
-                                let key = "\(kind.rawValue)-\(t.taskName)"
+                                let key = "\(ep.id)-\(t.taskName)"
                                 if running.contains(key) { ProgressView().controlSize(.small).frame(width: 60) } else {
                                     Button("Run") {
                                         running.insert(key)
                                         Task {
-                                            do { try await client(kind)?.command(t.taskName); app.flash("\(t.name) started") }
+                                            do { try await ep.client.command(t.taskName); app.flash("\(t.name) started") }
                                             catch { app.flash(error.localizedDescription, .error) }
                                             running.remove(key)
                                         }
@@ -147,7 +175,7 @@ struct SystemView: View {
     }
 
     private func qbCard(_ t: TorrentStore) -> some View {
-        GlassCard(title: "qBittorrent", symbol: ServiceKind.qbittorrent.symbol, tint: .blue) {
+        GlassCard(title: t.name, symbol: ServiceKind.qbittorrent.symbol, tint: .blue) {
             HStack(spacing: 18) {
                 KeyValueMini("Version", t.version ?? "—")
                 KeyValueMini("Connection", t.server.connectionStatus.capitalized)
@@ -157,7 +185,7 @@ struct SystemView: View {
                 KeyValueMini("All-time ↑", t.server.allTimeUL.byteString)
                 KeyValueMini("Ratio", t.server.globalRatio)
                 Spacer()
-                Button("Logs") { logsFor = .qbittorrent }.buttonStyle(.glass)
+                Button("Logs") { logsFor = LogTarget(id: t.config.id, kind: .qbittorrent, name: t.name, qb: t.client) }.buttonStyle(.glass)
             }
         }
     }
@@ -188,7 +216,8 @@ struct DiskRow: View {
 }
 
 struct ConnectionTile: View {
-    let kind: ServiceKind
+    let config: ServiceConfig
+    var kind: ServiceKind { config.kind }
     let version: String?
     let error: String?
     @Environment(AppModel.self) private var app
@@ -196,9 +225,9 @@ struct ConnectionTile: View {
         HStack(spacing: 12) {
             Image(systemName: kind.symbol).font(.title2).foregroundStyle(kind.tint).frame(width: 34)
             VStack(alignment: .leading, spacing: 2) {
-                Text(kind.displayName).font(.headline)
+                Text(config.name).font(.headline).lineLimit(1)
                 Text(error != nil ? "Unreachable" : version.map { $0.hasPrefix("v") ? $0 : "v\($0)" } ?? "Connecting…").font(.caption).foregroundStyle(error != nil ? .red : .secondary)
-                Text(app.config(kind)?.url ?? "").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                Text(config.url).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
             }
             Spacer()
             StatusDot(color: error != nil ? .red : version != nil ? .green : .orange)
@@ -209,7 +238,8 @@ struct ConnectionTile: View {
 }
 
 struct LogsSheet: View {
-    let kind: ServiceKind
+    let target: LogTarget
+    var kind: ServiceKind { target.kind }
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @State private var lines: [(id: String, time: Date, level: String, logger: String, message: String)] = []
@@ -220,7 +250,7 @@ struct LogsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("\(kind.displayName) Logs").font(.title2.bold())
+                Text("\(target.name) Logs").font(.title2.bold())
                 Spacer()
                 if kind != .qbittorrent {
                     Picker("Level", selection: $level) {
@@ -256,7 +286,7 @@ struct LogsSheet: View {
         loading = true
         defer { loading = false }
         if kind == .qbittorrent {
-            let raw = (try? await app.torrents?.client.log()) ?? []
+            let raw = (try? await target.qb?.log()) ?? []
             lines = raw.reversed().map { j in
                 let t = j["type"]?.intValue ?? 1
                 let lvl = t == 8 ? "critical" : t == 4 ? "warning" : t == 2 ? "info" : "normal"
@@ -264,8 +294,7 @@ struct LogsSheet: View {
             }
             return
         }
-        let client: ArrClient? = kind == .radarr ? app.radarr?.client : kind == .sonarr ? app.sonarr?.client : app.prowlarr?.client
-        let page = try? await client?.logs(pageSize: 200, level: level)
+        let page = try? await target.arr?.logs(pageSize: 200, level: level)
         lines = (page?.records ?? []).map { ("\($0.id)", $0.time, $0.level, $0.logger ?? "", ($0.message ?? "") + ($0.exception.map { "\n" + $0 } ?? "")) }
     }
 }

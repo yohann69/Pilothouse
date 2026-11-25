@@ -1,23 +1,27 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 /// Queue item tagged with the service it came from.
 struct TaggedQueueItem: Identifiable {
     let kind: ServiceKind
+    var client: ArrClient? = nil
+    var instance: String = ""
     let item: ArrQueueItem
-    var id: String { "\(kind.rawValue)-\(item.id)" }
+    var id: String { "\(instance)-\(kind.rawValue)-\(item.id)" }
 }
 
 struct TaggedHistory: Identifiable {
     let kind: ServiceKind
+    var instance: String = ""
     let record: ArrHistoryRecord
-    var id: String { "\(kind.rawValue)-\(record.id)" }
+    var id: String { "\(instance)-\(kind.rawValue)-\(record.id)" }
 }
 
 struct QueueItemRow: View {
     var item: ArrQueueItem
     var showsMedia: Bool
     var kind: ServiceKind?
+    var instance: String? = nil
 
     private var mediaTitle: String? {
         if let m = item.movie { return "\(m.title)" + (m.year.map { " (\(String($0)))" } ?? "") }
@@ -52,6 +56,7 @@ struct QueueItemRow: View {
                 HStack(spacing: 4) {
                     if let q = item.quality?.name { Text(q) }
                     if let c = item.downloadClient { Text("· \(c)") }
+                    if let instance, !instance.isEmpty { Text("· \(instance)") }
                 }
                 .font(.caption2).foregroundStyle(.secondary)
             }
@@ -112,11 +117,11 @@ struct ActivityView: View {
         if queue.isEmpty { state = .loading }
         var out: [TaggedQueueItem] = []
         var err: String?
-        if let r = app.radarr {
-            do { out += try await r.client.queue().records.map { TaggedQueueItem(kind: .radarr, item: $0) } } catch { err = error.localizedDescription }
+        for r in app.allRadarr {
+            do { out += try await r.client.queue().records.map { TaggedQueueItem(kind: .radarr, client: r.client, instance: r.name, item: $0) } } catch { err = error.localizedDescription }
         }
-        if let s = app.sonarr {
-            do { out += try await s.client.queue().records.map { TaggedQueueItem(kind: .sonarr, item: $0) } } catch { err = error.localizedDescription }
+        for s in app.allSonarr {
+            do { out += try await s.client.queue().records.map { TaggedQueueItem(kind: .sonarr, client: s.client, instance: s.name, item: $0) } } catch { err = error.localizedDescription }
         }
         queue = out.sorted { ($0.item.estimatedCompletionTime ?? .distantFuture) < ($1.item.estimatedCompletionTime ?? .distantFuture) }
         state = err.map { .failed($0) } ?? .loaded
@@ -125,11 +130,13 @@ struct ActivityView: View {
     private func loadHistory(reset: Bool) async {
         if reset { historyPage = 1; history = [] }
         var out: [TaggedHistory] = []
-        async let r = try? app.radarr?.client.history(page: historyPage, pageSize: 40).records
-        async let s = try? app.sonarr?.client.history(page: historyPage, pageSize: 40).records
-        let (rr, ss) = await (r, s)
-        out += (rr ?? nil ?? []).map { TaggedHistory(kind: .radarr, record: $0) }
-        out += (ss ?? nil ?? []).map { TaggedHistory(kind: .sonarr, record: $0) }
+        let page = historyPage
+        for r in app.allRadarr {
+            out += ((try? await r.client.history(page: page, pageSize: 40).records) ?? []).map { TaggedHistory(kind: .radarr, instance: r.name, record: $0) }
+        }
+        for s in app.allSonarr {
+            out += ((try? await s.client.history(page: page, pageSize: 40).records) ?? []).map { TaggedHistory(kind: .sonarr, instance: s.name, record: $0) }
+        }
         history += out
         history.sort { $0.record.date > $1.record.date }
         historyPage += 1
@@ -141,12 +148,12 @@ struct ActivityView: View {
                 ContentUnavailableView("Queue Is Empty", systemImage: "checkmark.circle", description: Text("Nothing is downloading through Radarr or Sonarr."))
             } else {
                 List(queue) { q in
-                    QueueItemRow(item: q.item, showsMedia: true, kind: q.kind)
+                    QueueItemRow(item: q.item, showsMedia: true, kind: q.kind, instance: app.instances(q.kind).count > 1 ? q.instance : nil)
                         .contextMenu {
                             Button("Remove…", systemImage: "trash") { removing = q }
                             if q.item.status?.lowercased() == "delay" {
                                 Button("Grab Now", systemImage: "arrow.down.circle") {
-                                    app.run("Grabbing") { try await client(q.kind)?.grabQueueItem(id: q.item.id); await loadQueue() }
+                                    app.run("Grabbing") { try await (q.client ?? client(q.kind))?.grabQueueItem(id: q.item.id); await loadQueue() }
                                 }
                             }
                         }
@@ -195,7 +202,7 @@ struct RemoveQueueSheet: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Remove", role: .destructive) {
                     let (rc, bl, sk) = (removeFromClient, blocklist, skipRedownload)
-                    let client: ArrClient? = item.kind == .radarr ? app.radarr?.client : app.sonarr?.client
+                    let client: ArrClient? = item.client ?? (item.kind == .radarr ? app.radarr?.client : app.sonarr?.client)
                     let id = item.item.id
                     app.run("Removed from queue") {
                         try await client?.removeQueueItem(id: id, removeFromClient: rc, blocklist: bl, skipRedownload: sk)

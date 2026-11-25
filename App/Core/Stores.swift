@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 enum LoadState: Equatable {
     case idle, loading, loaded, failed(String)
@@ -19,7 +19,13 @@ final class RadarrStore {
     var state: LoadState = .idle
     var lastLoaded: Date?
 
-    init(config: ServiceConfig) { client = RadarrClient(config: config) }
+    let config: ServiceConfig
+    var name: String { config.name }
+
+    init(config: ServiceConfig) {
+        self.config = config
+        client = RadarrClient(config: config)
+    }
 
     func load(force: Bool = false) async {
         if !force, let lastLoaded, Date().timeIntervalSince(lastLoaded) < 30, !movies.isEmpty { return }
@@ -81,7 +87,13 @@ final class SonarrStore {
     var state: LoadState = .idle
     var lastLoaded: Date?
 
-    init(config: ServiceConfig) { client = SonarrClient(config: config) }
+    let config: ServiceConfig
+    var name: String { config.name }
+
+    init(config: ServiceConfig) {
+        self.config = config
+        client = SonarrClient(config: config)
+    }
 
     func load(force: Bool = false) async {
         if !force, let lastLoaded, Date().timeIntervalSince(lastLoaded) < 30, !series.isEmpty { return }
@@ -139,7 +151,13 @@ final class SeerrStore {
     private var detailCache: [String: SeerrMediaDetails] = [:]
     private var detailTasks: [String: Task<SeerrMediaDetails?, Never>] = [:]
 
-    init(config: ServiceConfig) { client = SeerrClient(config: config) }
+    let config: ServiceConfig
+    var name: String { config.name }
+
+    init(config: ServiceConfig) {
+        self.config = config
+        client = SeerrClient(config: config)
+    }
 
     func loadBasics() async {
         async let me = try? client.me()
@@ -178,7 +196,13 @@ final class ProwlarrStore {
     var statuses: [Int: ProwlarrIndexerStatus] = [:]
     var state: LoadState = .idle
 
-    init(config: ServiceConfig) { client = ProwlarrClient(config: config) }
+    let config: ServiceConfig
+    var name: String { config.name }
+
+    init(config: ServiceConfig) {
+        self.config = config
+        client = ProwlarrClient(config: config)
+    }
 
     func load() async {
         if indexers.isEmpty { state = .loading }
@@ -223,7 +247,13 @@ final class TorrentStore {
     @ObservationIgnored private var knownIncomplete: Set<String>?
     @ObservationIgnored private var wake: CheckedContinuation<Void, Never>?
 
-    init(config: ServiceConfig) { client = QBittorrentClient(config: config) }
+    let config: ServiceConfig
+    var name: String { config.name }
+
+    init(config: ServiceConfig) {
+        self.config = config
+        client = QBittorrentClient(config: config)
+    }
 
     var downloading: [QBTorrent] { torrents.filter { $0.stateGroup == .downloading || $0.stateGroup == .stalled } }
     var activeCount: Int { torrents.filter { $0.dlspeed > 0 || $0.upspeed > 0 }.count }

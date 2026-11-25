@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct RequestsView: View {
     let store: SeerrStore

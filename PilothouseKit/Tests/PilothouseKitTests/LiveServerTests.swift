@@ -1,14 +1,14 @@
 import Foundation
 import Testing
-@testable import ArrcadeKit
+@testable import PilothouseKit
 
 /// Integration tests that run against the real home server described by the nzb360 backup.
-/// Set ARRCADE_BACKUP to an nzb360 backup folder; without one these suites are skipped.
+/// Set PILOTHOUSE_BACKUP to an nzb360 backup folder; without one these suites are skipped.
 /// Write tests are reversible: every change is restored.
 enum Live {
     static let backupURL: URL = {
-        if let p = ProcessInfo.processInfo.environment["ARRCADE_BACKUP"] { return URL(fileURLWithPath: p) }
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent() // ArrcadeKitTests
+        if let p = ProcessInfo.processInfo.environment["PILOTHOUSE_BACKUP"] { return URL(fileURLWithPath: p) }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent() // PilothouseKitTests
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let items = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         return items.first { $0.lastPathComponent.hasPrefix("nzb360_backup") } ?? root
@@ -20,7 +20,7 @@ enum Live {
         for c in backup.serviceConfigs() { out[c.kind] = c }
         // The backup's Prowlarr host is stale; it now lives on the same box as the others.
         if var p = out[.prowlarr], let radarrHost = out[.radarr].flatMap({ URL(string: $0.url)?.host() }) {
-            if let override = ProcessInfo.processInfo.environment["ARRCADE_PROWLARR_URL"] { p.url = override }
+            if let override = ProcessInfo.processInfo.environment["PILOTHOUSE_PROWLARR_URL"] { p.url = override }
             else { p.fallbackURL = "http://\(radarrHost):9696" }
             out[.prowlarr] = p
         }
@@ -132,8 +132,8 @@ struct RadarrLiveTests {
     }
 
     @Test func tagRoundTrip() async throws {
-        let tag = try await c.createTag("arrcade-test")
-        #expect(tag.label == "arrcade-test")
+        let tag = try await c.createTag("pilothouse-test")
+        #expect(tag.label == "pilothouse-test")
         try await c.delete("tag/\(tag.id)")
         #expect(try await !c.tags().contains { $0.id == tag.id })
     }
@@ -341,25 +341,40 @@ struct QBittorrentLiveTests {
         }
         func cleanup() async {
             try? await c.delete([hash], deleteFiles: true)
-            try? await c.removeCategories(["arrcade-test"])
-            try? await c.deleteTags(["arrcade-tag"])
+            try? await c.removeCategories(["pilothouse-test"])
+            try? await c.deleteTags(["pilothouse-tag"])
         }
         do {
             let t = try #require(found, "torrent did not appear")
             #expect(t.isPaused)
-            try await c.createCategory("arrcade-test", savePath: "")
-            try await c.setCategory([hash], "arrcade-test")
-            try await c.addTags([hash], ["arrcade-tag"])
+            try await c.createCategory("pilothouse-test", savePath: "")
+            try await c.setCategory([hash], "pilothouse-test")
+            try await c.addTags([hash], ["pilothouse-tag"])
             try await c.setDownloadLimit([hash], 1024 * 100)
             if snap.server.queueing { try await c.move([hash], .top) }
-            try await c.rename(hash, "arrcade rename test")
+            try await c.rename(hash, "pilothouse rename test")
             try await Task.sleep(for: .milliseconds(600))
             snap = try await c.sync()
             let t2 = try #require(snap.torrents.first { $0.hash == hash })
-            #expect(t2.category == "arrcade-test")
-            #expect(t2.tags.contains("arrcade-tag"))
+            #expect(t2.category == "pilothouse-test")
+            #expect(t2.tags.contains("pilothouse-tag"))
             #expect(t2.dlLimit == 1024 * 100)
-            #expect(t2.name == "arrcade rename test")
+            #expect(t2.name == "pilothouse rename test")
+            // Trackers: add, edit, remove
+            let tr1 = "udp://tracker.example.invalid:1337/announce", tr2 = "udp://tracker2.example.invalid:1337/announce"
+            try await c.addTrackers(hash, urls: [tr1])
+            try await c.editTracker(hash, from: tr1, to: tr2)
+            #expect(try await c.trackers(hash).contains { $0.url == tr2 })
+            try await c.removeTrackers(hash, urls: [tr2])
+            #expect(try await !c.trackers(hash).contains { $0.url == tr2 })
+            // Web seeds and peers endpoints
+            _ = try await c.webSeeds(hash)
+            try await c.addPeers([hash], peers: ["127.0.0.1:6881"])
+            // Export .torrent (metadata may not be fetched yet for a fresh magnet)
+            if let data = try? await c.exportTorrent(hash) { #expect(data.isEmpty || data.first == UInt8(ascii: "d")) }
+            // Preferences write path with an unchanged value
+            let prefs = try await c.preferences()
+            if let lan = prefs["limit_lan_peers"] { try await c.setPreferences(["limit_lan_peers": lan]) }
             try await c.resume([hash])
             try await c.pause([hash])
         } catch {
@@ -370,6 +385,34 @@ struct QBittorrentLiveTests {
         try await Task.sleep(for: .milliseconds(600))
         snap = try await c.sync()
         #expect(!snap.torrents.contains { $0.hash == hash })
-        #expect(!snap.categories.contains { $0.name == "arrcade-test" })
+        #expect(!snap.categories.contains { $0.name == "pilothouse-test" })
+    }
+}
+
+@Suite("Network discovery", .serialized, .enabled(if: Live.available))
+struct DiscoveryLiveTests {
+    @Test func fingerprintsKnownServer() async throws {
+        let host = try #require(Live.configs[.radarr].flatMap { URL(string: $0.url)?.host() })
+        for kind in ServiceKind.allCases {
+            let port = NetworkScanner.ports(for: kind)[0]
+            let found = await NetworkScanner.fingerprint(host: host, port: port)
+            #expect(found.first?.kind == kind, "\(kind) on \(port)")
+            if kind == .radarr || kind == .sonarr || kind == .prowlarr {
+                #expect(found.first?.apiKey == Live.configs[kind]?.apiKey, "api key for \(kind)")
+            }
+        }
+        #expect(await NetworkScanner.isOpen(host: host, port: 7878, timeout: 1))
+        #expect(await !NetworkScanner.isOpen(host: host, port: 1, timeout: 1))
+    }
+
+    @Test func fullSubnetScan() async throws {
+        #expect(!NetworkScanner.localSubnetPrefixes().isEmpty)
+        let start = Date()
+        var found: [DiscoveredService] = []
+        for await s in NetworkScanner.scan() { found.append(s) }
+        let elapsed = Date().timeIntervalSince(start)
+        print("Discovery: \(found.count) services in \(String(format: "%.1f", elapsed))s:", found.map { "\($0.kind.rawValue)@\($0.url) key=\($0.apiKey != nil)" })
+        #expect(Set(found.map(\.kind)) == Set(ServiceKind.allCases))
+        #expect(elapsed < 60)
     }
 }

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="Assets/icon-1024.png" width="160" alt="Arrcade icon">
+  <img src="Assets/icon-1024.png" width="160" alt="Pilothouse icon">
 </p>
 
-<h1 align="center">Arrcade</h1>
+<h1 align="center">Pilothouse</h1>
 
 <p align="center">
-  A native macOS control center for your home media stack —<br>
+  The native macOS control room for your home media stack —<br>
   <b>Radarr · Sonarr · Seerr · Prowlarr · qBittorrent</b><br>
   built with SwiftUI and Liquid Glass.
 </p>
@@ -16,55 +16,87 @@
   <img src="https://img.shields.io/badge/license-MIT-blue">
 </p>
 
+<p align="center">
+  <img src="Assets/screenshots/dashboard.jpg" alt="Dashboard">
+</p>
+
 ---
+
+## Screenshots
+
+| Movies | Series |
+| --- | --- |
+| ![Movies](Assets/screenshots/movies.jpg) | ![Series detail](Assets/screenshots/series-detail.jpg) |
+
+| Discover (Seerr) | Request details |
+| --- | --- |
+| ![Discover](Assets/screenshots/discover.jpg) | ![Seerr details](Assets/screenshots/seerr-detail.jpg) |
+
+| Torrents — per-torrent controls | Torrents — files |
+| --- | --- |
+| ![Torrents](Assets/screenshots/torrents.jpg) | ![Torrent files](Assets/screenshots/torrent-files.jpg) |
+
+| Calendar |
+| --- |
+| ![Calendar](Assets/screenshots/calendar.jpg) |
 
 ## Features
 
-**Dashboard** — live transfer speeds with a graph, health warnings from every service, the Radarr/Sonarr download queue, the week's upcoming releases, pending requests, disk space and indexer stats. Cards can be shown, hidden and reset.
+**Unlimited connections** — add as many Radarr, Sonarr, Seerr, Prowlarr and qBittorrent servers as you want (4K Radarr, a second seedbox…). Each section has a server switcher in the toolbar; Dashboard, Activity, Calendar and System combine every server.
 
-**Movies (Radarr)** — poster grid or sortable table, filters (missing, upcoming, cutoff unmet…), detail pages with backdrop, ratings, media info and history. Automatic and interactive search with release grabbing, monitor toggle, edit (profile, availability, path, tags), refresh, rename, delete file / movie, add movies with every option.
+**Find on Network** — scans your local network for each service on its usual ports, identifies what's running and, for Radarr, Sonarr and Prowlarr with local authentication disabled, fills in the API key for you. Every connection editor also has a **Detect** button and an API-key **Fetch** button.
 
-**Series (Sonarr)** — same library views, seasons and episodes with per-season and per-episode monitoring, season or episode search (automatic or interactive), episode details with file info and history, edit, add with monitor options.
+**Dashboard** — live transfer speeds with a graph, health warnings from every server, the download queue, upcoming releases, pending requests, disk space and indexer stats. Cards can be shown, hidden and reset.
 
-**Seerr** — Discover carousels and search, media pages with cast, trailer and recommendations, requests with season selection, 4K, server, profile and root folder, a request list with approve / decline / retry / delete, and issues with comments, resolve and reopen.
+**Movies (Radarr)** — poster grid or sortable table, filters (missing, upcoming, cutoff unmet…), detail pages with backdrop, ratings, media info and history; automatic and interactive search with release grabbing, monitoring, edit (profile, availability, path, tags), refresh, rename, delete, and adding movies with every option.
 
-**Torrents (qBittorrent)** — incremental sync for low-overhead live updates, a customizable 21-column table, status/category/tag/tracker filters, an inspector (general, files with priorities, trackers, peers), every torrent action (pause, force start, recheck, reannounce, location, rename, category, tags, speed and share limits, queue, sequential…), adding by magnet, URL, file or drag & drop, global and alternative speed limits, category management. Arrcade can be your default `magnet:` handler and opens `.torrent` files.
+**Series (Sonarr)** — the same library views plus seasons and episodes with per-season and per-episode monitoring, season or episode search (automatic or interactive), episode details with file info and history, and adding series with monitor options.
 
-**Search (Prowlarr)** — search every indexer at once, filter by type and indexer, grab through Prowlarr or send straight to qBittorrent. Indexer management with stats, enable/disable, priority, testing and app sync.
+**Seerr** — Discover carousels and search, media pages with cast, trailer and recommendations, requests with season selection, 4K, server, profile and root folder, a request list with approve / decline / retry / delete, and issues with comments.
 
-**Calendar, Activity, System** — agenda and month calendar, combined queue / history / wanted lists, service status, health, disks, scheduled tasks (run now), logs and restart.
+**Torrents (qBittorrent)** — everything you'd do in qBittorrent itself:
+- live list using qBittorrent's incremental sync, a customizable 21-column table, filters by state, category, tag and tracker
+- per-torrent **download/upload speed limits**, share limits, category, tags, save path, sequential download, first/last piece, auto management, force start, super seeding, queue position
+- **file tree** with per-file and per-folder priorities (skip / normal / high / max) and renaming
+- trackers (add, edit, remove), peers (add, ban), HTTP web seeds, `.torrent` export, magnet copy
+- add by magnet, URL, `.torrent` file or drag & drop with all options; Pilothouse can be your default `magnet:` handler
+- global and alternative speed limits, category management
+- **qBittorrent Options** (⌥⌘,): downloads, connection, speed and scheduler, BitTorrent privacy, queueing and seeding limits
 
-**Mac-native extras** — menu bar extra with live speeds and quick controls, download-complete notifications, keyboard shortcuts (⌘1–9, ⌘R, ⌘O, ⇧⌘L), customizable sidebar, fallback URLs and custom headers per server, and import of an existing **nzb360** backup.
+**Search (Prowlarr)** — search every indexer at once, filter by type and indexer, grab through Prowlarr or send straight to qBittorrent; indexer management with stats, enable/disable, priority, testing and app sync.
+
+**Calendar, Activity, System** — agenda and month calendar, combined queue / history / wanted lists, status, health, disks, scheduled tasks (run now), logs and restart for each server.
+
+**Mac-native** — menu bar extra with live speeds and quick controls, download-complete notifications, keyboard shortcuts (⌘1–9, ⌘R, ⌘O, ⇧⌘L), a customizable sidebar, fallback URLs and custom headers per server, and import of an existing **nzb360** backup.
 
 ## Install
 
-1. Download `Arrcade.zip` from the [latest release](../../releases/latest) and move **Arrcade.app** to `/Applications`.
+1. Download `Pilothouse.zip` from the [latest release](../../releases/latest) and move **Pilothouse.app** to `/Applications`.
 2. The app is not notarized, so remove the quarantine flag once:
    ```bash
-   xattr -dr com.apple.quarantine /Applications/Arrcade.app
+   xattr -dr com.apple.quarantine /Applications/Pilothouse.app
    ```
-3. On first launch, click **Allow** when macOS asks for **Local Network** access — otherwise Arrcade can't reach your servers.
+3. On first launch, click **Allow** when macOS asks for **Local Network** access — otherwise Pilothouse can't reach your servers.
 
-Requires macOS 26 (Tahoe) or later.
+Requires macOS 26 (Tahoe) or later on Apple silicon.
 
 ## Setup
 
-Open **Settings › Servers** and either:
+Open **Settings › Connections**, then either:
 
-- click **Import nzb360 Backup…** and choose the folder containing your nzb360 backup files, or
-- enter each server's URL and API key (qBittorrent uses username/password, or nothing if your LAN bypasses auth).
+- click **Find on Network** and add what it finds,
+- click **Import** to read an nzb360 backup folder, or
+- click **Add** and fill in a server (the **Detect** button finds its address for you).
 
-Use **Test** to check each connection. Every server can also have a fallback URL (e.g. a reverse proxy used when you're away), custom headers, a timeout and a self-signed-certificate option.
-
-Settings live in `~/Library/Application Support/Arrcade/services.json`, readable only by your user.
+Settings live in `~/Library/Application Support/Pilothouse/services.json`, readable only by your user.
 
 ## Build from source
 
 ```bash
 brew install xcodegen
 xcodegen generate
-xcodebuild -project Arrcade.xcodeproj -scheme Arrcade -configuration Release -derivedDataPath build build
-open build/Build/Products/Release/Arrcade.app
+xcodebuild -project Pilothouse.xcodeproj -scheme Pilothouse -configuration Release -derivedDataPath build build
+open build/Build/Products/Release/Pilothouse.app
 ```
 
 Requires Xcode 26 or later.
@@ -73,7 +105,7 @@ Requires Xcode 26 or later.
 
 | Path | Contents |
 | --- | --- |
-| `ArrcadeKit/` | Swift package: networking, models, API clients for all five services, nzb360 backup importer, integration tests |
+| `PilothouseKit/` | Swift package: networking, models, API clients for all five services, network discovery, nzb360 backup importer, integration tests |
 | `App/` | SwiftUI app |
 | `Scripts/make-icon.swift` | Renders the app icon |
 | `project.yml` | XcodeGen project spec |
@@ -83,13 +115,13 @@ Requires Xcode 26 or later.
 The integration tests run against real servers and undo every change they make. Point them at an nzb360 backup; without one they're skipped.
 
 ```bash
-cd ArrcadeKit
-ARRCADE_BACKUP=/path/to/nzb360_backup swift test
+cd PilothouseKit
+PILOTHOUSE_BACKUP=/path/to/nzb360_backup swift test
 ```
 
 ## Acknowledgements
 
-Inspired by the nzb360 Android app. Arrcade is an independent project and is not affiliated with nzb360, Radarr, Sonarr, Prowlarr, Seerr or qBittorrent.
+Inspired by the nzb360 Android app. Pilothouse is an independent project and is not affiliated with nzb360, Radarr, Sonarr, Prowlarr, Seerr or qBittorrent.
 
 ## License
 

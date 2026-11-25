@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct DashboardView: View {
     @Environment(AppModel.self) private var app
@@ -40,8 +40,8 @@ struct DashboardView: View {
                 .padding(22)
             }
             .navigationTitle("Dashboard")
-            .navigationDestination(for: MovieRoute.self) { r in if let s = app.radarr { MovieDetailView(store: s, movieId: r.id) } }
-            .navigationDestination(for: SeriesRoute.self) { r in if let s = app.sonarr { SeriesDetailView(store: s, seriesId: r.id) } }
+            .navigationDestination(for: MovieRoute.self) { r in if let s = r.instance.flatMap({ app.radarrStores[$0] }) ?? app.radarr { MovieDetailView(store: s, movieId: r.id) } }
+            .navigationDestination(for: SeriesRoute.self) { r in if let s = r.instance.flatMap({ app.sonarrStores[$0] }) ?? app.sonarr { SeriesDetailView(store: s, seriesId: r.id) } }
             .navigationDestination(for: SeerrRoute.self) { r in if let s = app.seerr { SeerrMediaDetailView(store: s, tmdbId: r.tmdbId, isMovie: r.isMovie) } }
             .toolbar {
                 ToolbarItem {
@@ -156,7 +156,7 @@ struct DashboardView: View {
             if queue.isEmpty {
                 Text("Nothing in the Radarr/Sonarr queue.").foregroundStyle(.secondary)
             } else {
-                ForEach(queue.prefix(6)) { q in QueueItemRow(item: q.item, showsMedia: true, kind: q.kind) }
+                ForEach(queue.prefix(6)) { q in QueueItemRow(item: q.item, showsMedia: true, kind: q.kind, instance: app.instances(q.kind).count > 1 ? q.instance : nil) }
                 if queue.count > 6 { Button("View all \(queue.count)") { app.selection = .activity }.buttonStyle(.link) }
             }
         }
@@ -267,29 +267,29 @@ struct DashboardView: View {
 
     private func loadQueue() async -> [TaggedQueueItem] {
         var out: [TaggedQueueItem] = []
-        if let c = app.radarr?.client, let r = try? await c.queue(pageSize: 20) { out += r.records.map { TaggedQueueItem(kind: .radarr, item: $0) } }
-        if let c = app.sonarr?.client, let r = try? await c.queue(pageSize: 20) { out += r.records.map { TaggedQueueItem(kind: .sonarr, item: $0) } }
+        for s in app.allRadarr { if let r = try? await s.client.queue(pageSize: 20) { out += r.records.map { TaggedQueueItem(kind: .radarr, client: s.client, instance: s.name, item: $0) } } }
+        for s in app.allSonarr { if let r = try? await s.client.queue(pageSize: 20) { out += r.records.map { TaggedQueueItem(kind: .sonarr, client: s.client, instance: s.name, item: $0) } } }
         return out
     }
 
     private func loadUpcoming() async -> [CalendarEntry] {
         let start = Calendar.current.startOfDay(for: .now), end = start.addingTimeInterval(7 * 86400)
         var out: [CalendarEntry] = []
-        if let s = app.sonarr, let eps = try? await s.client.calendar(start: start, end: end, unmonitored: false) {
+        for s in app.allSonarr { guard let eps = try? await s.client.calendar(start: start, end: end, unmonitored: false) else { continue }
             out += eps.compactMap { e in
                 guard let d = e.airDateUtc else { return nil }
                 let series = e.series
-                return CalendarEntry(id: "e\(e.id)", date: d, title: series?.title ?? "", subtitle: "\(e.code) · \(e.title ?? "")",
+                return CalendarEntry(id: "\(s.config.id)e\(e.id)", date: d, title: series?.title ?? "", subtitle: "\(e.code) · \(e.title ?? "")",
                                      kind: .episode(seriesId: e.seriesId), hasFile: e.hasFile ?? false, monitored: e.monitored,
-                                     poster: series.map { s.posterURLs($0, width: 185) } ?? [], releaseType: nil)
+                                     poster: series.map { s.posterURLs($0, width: 185) } ?? [], releaseType: nil, instance: s.config.id)
             }
         }
-        if let r = app.radarr, let movies = try? await r.client.calendar(start: start, end: end, unmonitored: false) {
+        for r in app.allRadarr { guard let movies = try? await r.client.calendar(start: start, end: end, unmonitored: false) else { continue }
             for m in movies {
                 for (d, label) in [(m.digitalRelease, "Digital"), (m.physicalRelease, "Physical"), (m.inCinemas, "In Cinemas")] {
                     if let d, d >= start, d <= end {
-                        out.append(CalendarEntry(id: "m\(m.id ?? 0)\(label)", date: d, title: m.title, subtitle: label, kind: .movie(m.id ?? 0),
-                                                 hasFile: m.downloaded, monitored: m.monitored ?? true, poster: r.posterURLs(m, width: 185), releaseType: label))
+                        out.append(CalendarEntry(id: "\(r.config.id)m\(m.id ?? 0)\(label)", date: d, title: m.title, subtitle: label, kind: .movie(m.id ?? 0),
+                                                 hasFile: m.downloaded, monitored: m.monitored ?? true, poster: r.posterURLs(m, width: 185), releaseType: label, instance: r.config.id))
                     }
                 }
             }
@@ -300,11 +300,11 @@ struct DashboardView: View {
     private func loadRecent() async -> [TaggedHistory] {
         var out: [TaggedHistory] = []
         let imported: Set<String> = ["downloadFolderImported", "movieFolderImported", "seriesFolderImported"]
-        if let c = app.radarr?.client, let h = try? await c.history(pageSize: 40) {
-            out += h.records.filter { imported.contains($0.eventType) }.map { TaggedHistory(kind: .radarr, record: $0) }
+        for s in app.allRadarr { guard let h = try? await s.client.history(pageSize: 40) else { continue }
+            out += h.records.filter { imported.contains($0.eventType) }.map { TaggedHistory(kind: .radarr, instance: s.name, record: $0) }
         }
-        if let c = app.sonarr?.client, let h = try? await c.history(pageSize: 40) {
-            out += h.records.filter { imported.contains($0.eventType) }.map { TaggedHistory(kind: .sonarr, record: $0) }
+        for s in app.allSonarr { guard let h = try? await s.client.history(pageSize: 40) else { continue }
+            out += h.records.filter { imported.contains($0.eventType) }.map { TaggedHistory(kind: .sonarr, instance: s.name, record: $0) }
         }
         return out.sorted { $0.record.date > $1.record.date }
     }
@@ -312,10 +312,11 @@ struct DashboardView: View {
     private func loadHealth() async -> ([(ServiceKind, ArrHealth)], [ArrDiskSpace]) {
         var h: [(ServiceKind, ArrHealth)] = []
         var d: [ArrDiskSpace] = []
-        let clients: [(ServiceKind, ArrClient?)] = [(.radarr, app.radarr?.client), (.sonarr, app.sonarr?.client), (.prowlarr, app.prowlarr?.client)]
+        let clients: [(ServiceKind, ArrClient?)] = app.allRadarr.map { (.radarr, $0.client as ArrClient?) } + app.allSonarr.map { (.sonarr, $0.client as ArrClient?) } + app.allProwlarr.map { (.prowlarr, $0.client as ArrClient?) }
         for (k, c) in clients {
             guard let c else { continue }
-            h += ((try? await c.health()) ?? []).map { (k, $0) }
+            do { h += try await c.health().map { (k, $0) } }
+            catch { h.append((k, ArrHealth(source: "Connection", type: "error", message: "Couldn't reach \(c.config.name): \(error.localizedDescription)", wikiUrl: nil))) }
             if k != .prowlarr { d += (try? await c.diskSpace()) ?? [] }
         }
         var seen = Set<String>()

@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct SeerrRoute: Hashable {
     let tmdbId: Int
@@ -16,7 +16,6 @@ struct DiscoverView: View {
     @State private var search = ""
     @State private var rows: [SeerrDiscoverCategory: [SeerrMediaResult]] = [:]
     @State private var errors: [SeerrDiscoverCategory: String] = [:]
-    @State private var loaded = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -38,7 +37,6 @@ struct DiscoverView: View {
                 ToolbarItem { Button { Task { await load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") } }
             }
         }
-        .task { await load(force: false) }
         .focusedSceneValue(\.refreshAction) { Task { await load(force: true) } }
     }
 
@@ -75,6 +73,8 @@ struct DiscoverView: View {
                             ProgressView().padding(.horizontal, 24).frame(height: 240)
                         }
                     }
+                    // Each row loads on its own and retries if a previous attempt was cancelled.
+                    .task(id: cat) { if rows[cat] == nil { await loadRow(cat) } }
                 }
             }
             .padding(.vertical, 20)
@@ -82,21 +82,22 @@ struct DiscoverView: View {
     }
 
     private func load(force: Bool) async {
-        if loaded && !force { return }
-        loaded = true
-        await withTaskGroup(of: (SeerrDiscoverCategory, Result<[SeerrMediaResult], Error>).self) { group in
-            for cat in SeerrDiscoverCategory.allCases {
-                let client = store.client
-                group.addTask {
-                    do { return (cat, .success(try await client.discover(cat).results)) } catch { return (cat, .failure(error)) }
-                }
-            }
-            for await (cat, result) in group {
-                switch result {
-                case .success(let r): rows[cat] = r; errors[cat] = nil
-                case .failure(let e): errors[cat] = e.localizedDescription
-                }
-            }
+        guard force else { return }
+        for cat in SeerrDiscoverCategory.allCases { rows[cat] = nil; errors[cat] = nil }
+        await withTaskGroup(of: Void.self) { g in
+            for cat in SeerrDiscoverCategory.allCases { g.addTask { await loadRow(cat) } }
+        }
+    }
+
+    private func loadRow(_ cat: SeerrDiscoverCategory) async {
+        do {
+            let results = try await store.client.discover(cat).results
+            rows[cat] = results
+            errors[cat] = nil
+        } catch is CancellationError {
+        } catch let e as URLError where e.code == .cancelled {
+        } catch {
+            if !Task.isCancelled { errors[cat] = error.localizedDescription }
         }
     }
 }

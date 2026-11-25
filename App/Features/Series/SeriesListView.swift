@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 enum SeriesFilter: String, CaseIterable, Identifiable {
     case all, monitored, unmonitored, continuing, ended, missing, complete
@@ -46,7 +46,10 @@ enum SeriesSort: String, CaseIterable, Identifiable {
     }
 }
 
-struct SeriesRoute: Hashable { let id: Int }
+struct SeriesRoute: Hashable {
+    let id: Int
+    var instance: UUID? = nil
+}
 
 struct SeriesListView: View {
     @Bindable var store: SonarrStore

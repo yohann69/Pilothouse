@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct SeerrMediaDetailView: View {
     let store: SeerrStore

@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 /// Interactive search: lists releases from all indexers and lets the user grab one.
 struct ReleasesSheet: View {

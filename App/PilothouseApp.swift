@@ -1,9 +1,9 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 import UniformTypeIdentifiers
 
 @main
-struct ArrcadeApp: App {
+struct PilothouseApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var app = AppModel.shared
     @AppStorage(Prefs.showMenuBar) private var showMenuBar = true
@@ -24,7 +24,7 @@ struct ArrcadeApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Arrcade", id: "main") {
+        WindowGroup("Pilothouse", id: "main") {
             RootView()
                 .environment(app)
                 .frame(minWidth: 980, minHeight: 620)
@@ -102,6 +102,13 @@ struct AppCommands: Commands {
             Divider()
             Button("Toggle Alternative Speed Limits") { app.torrents?.perform { try await $0.toggleAltSpeed() } }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            Divider()
+            Button("qBittorrent Options…") {
+                app.selection = .torrents
+                app.showQBOptions = true
+            }
+            .keyboardShortcut(",", modifiers: [.command, .option])
+            .disabled(!app.isConfigured(.qbittorrent))
         }
     }
 }

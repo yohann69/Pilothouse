@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 import UniformTypeIdentifiers
 
 nonisolated extension QBTorrent {
@@ -36,7 +36,7 @@ struct TorrentsView: View {
     @State private var search = ""
     @State private var selection = Set<String>()
     @State private var sortOrder = [KeyPathComparator(\QBTorrent.addedValue, order: .reverse)]
-    @AppStorage("torrentInspectorVisible") private var showInspector = false
+    @AppStorage("torrentInspectorVisible") private var showInspector = true
     @State private var action: TorrentAction?
     @State private var showCategories = false
     @State private var showLimits = false
@@ -88,6 +88,7 @@ struct TorrentsView: View {
         .focusedSceneValue(\.refreshAction) { store.refreshNow() }
         .sheet(item: $action) { a in TorrentActionSheet(store: store, action: a) }
         .sheet(isPresented: $showCategories) { CategoryManagerSheet(store: store) }
+        .sheet(isPresented: Bindable(app).showQBOptions) { QBPreferencesSheet(store: store) }
         .onDrop(of: [.fileURL, .url, .plainText], isTargeted: $dropTargeted) { providers in handleDrop(providers) }
         .overlay {
             if dropTargeted {
@@ -225,9 +226,8 @@ struct TorrentsView: View {
         .contextMenu(forSelectionType: String.self) { hashes in
             TorrentContextMenu(store: store, hashes: Array(hashes), action: $action)
         } primaryAction: { hashes in
-            if let h = hashes.first, let t = store.torrents.first(where: { $0.hash == h }) {
-                store.perform { t.isPaused ? try await $0.resume([h]) : try await $0.pause([h]) }
-            }
+            // Double-click opens the details (files, limits, trackers…)
+            if !hashes.isEmpty { withAnimation { showInspector = true } }
         }
         .onDeleteCommand { if !selection.isEmpty { action = .delete(Array(selection)) } }
     }
@@ -243,6 +243,18 @@ struct TorrentsView: View {
                 .disabled(selection.isEmpty)
             Button { action = .delete(Array(selection)) } label: { Label("Delete", systemImage: "trash") }
                 .disabled(selection.isEmpty)
+            Button { action = .limits(Array(selection)) } label: { Label("Limit Speed", systemImage: "gauge.with.dots.needle.33percent") }
+                .disabled(selection.isEmpty)
+                .help("Limit download/upload speed of the selected torrents")
+            Menu {
+                Button("None") { store.perform { [sel = Array(selection)] in try await $0.setCategory(sel, "") } }
+                ForEach(store.categories) { c in
+                    Button(c.name) { store.perform("Category set to \(c.name)") { [sel = Array(selection)] in try await $0.setCategory(sel, c.name) } }
+                }
+                Divider()
+                Button("New Category…") { action = .newCategory(Array(selection)) }
+            } label: { Label("Category", systemImage: "folder") }
+                .disabled(selection.isEmpty)
         }
         ToolbarSpacer(.fixed)
         ToolbarItemGroup {
@@ -256,6 +268,8 @@ struct TorrentsView: View {
             Button { showLimits.toggle() } label: { Label("Speed Limits", systemImage: "speedometer") }
                 .popover(isPresented: $showLimits, arrowEdge: .bottom) { SpeedLimitsPopover(store: store) }
             Button { showCategories = true } label: { Label("Categories", systemImage: "folder.badge.gearshape") }
+            Button { app.showQBOptions = true } label: { Label("qBittorrent Options", systemImage: "gearshape.2") }
+                .help("qBittorrent options: downloads, connection, speed, BitTorrent, queueing")
         }
         ToolbarSpacer(.fixed)
         ToolbarItemGroup {

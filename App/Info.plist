@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>en</string>
-	<key>CFBundleDisplayName</key><string>Arrcade</string>
+	<key>CFBundleDisplayName</key><string>Pilothouse</string>
 	<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -14,7 +14,7 @@
 	<key>LSMinimumSystemVersion</key><string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 	<key>NSHumanReadableCopyright</key><string>Personal build</string>
-	<key>NSLocalNetworkUsageDescription</key><string>Arrcade connects to Radarr, Sonarr, Prowlarr, Seerr and qBittorrent on your local network.</string>
+	<key>NSLocalNetworkUsageDescription</key><string>Pilothouse connects to Radarr, Sonarr, Prowlarr, Seerr and qBittorrent on your local network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key><true/>

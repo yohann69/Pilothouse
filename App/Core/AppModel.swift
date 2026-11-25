@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 import UserNotifications
 
 /// Sidebar destinations.
@@ -104,38 +104,90 @@ final class AppModel {
     var pendingMagnet: String?
     var pendingTorrentFiles: [URL] = []
     var showAddTorrent = false
+    var showQBOptions = false
     var globalSearchText = ""
 
-    private(set) var radarr: RadarrStore?
-    private(set) var sonarr: SonarrStore?
-    private(set) var seerr: SeerrStore?
-    private(set) var torrents: TorrentStore?
-    private(set) var prowlarr: ProwlarrStore?
+    /// Every configured instance's store, keyed by config id.
+    private(set) var radarrStores: [UUID: RadarrStore] = [:]
+    private(set) var sonarrStores: [UUID: SonarrStore] = [:]
+    private(set) var seerrStores: [UUID: SeerrStore] = [:]
+    private(set) var torrentStores: [UUID: TorrentStore] = [:]
+    private(set) var prowlarrStores: [UUID: ProwlarrStore] = [:]
+    /// Which instance each section shows, per service kind.
+    private(set) var activeIDs: [ServiceKind: UUID] = [:]
+
+    // Active instance (what the per-service sections display).
+    var radarr: RadarrStore? { activeStore(.radarr, radarrStores) }
+    var sonarr: SonarrStore? { activeStore(.sonarr, sonarrStores) }
+    var seerr: SeerrStore? { activeStore(.seerr, seerrStores) }
+    var torrents: TorrentStore? { activeStore(.qbittorrent, torrentStores) }
+    var prowlarr: ProwlarrStore? { activeStore(.prowlarr, prowlarrStores) }
+
+    // All instances, in settings order (used by aggregate screens).
+    var allRadarr: [RadarrStore] { ordered(.radarr, radarrStores) }
+    var allSonarr: [SonarrStore] { ordered(.sonarr, sonarrStores) }
+    var allTorrents: [TorrentStore] { ordered(.qbittorrent, torrentStores) }
+    var allProwlarr: [ProwlarrStore] { ordered(.prowlarr, prowlarrStores) }
+    var allSeerr: [SeerrStore] { ordered(.seerr, seerrStores) }
+
+    private func ordered<S>(_ kind: ServiceKind, _ dict: [UUID: S]) -> [S] {
+        instances(kind).compactMap { dict[$0.id] }
+    }
+
+    private func activeStore<S>(_ kind: ServiceKind, _ dict: [UUID: S]) -> S? {
+        if let id = activeIDs[kind], let s = dict[id] { return s }
+        return instances(kind).first.flatMap { dict[$0.id] }
+    }
 
     private let fileURL: URL = {
-        let dir = URL.applicationSupportDirectory.appending(path: "Arrcade", directoryHint: .isDirectory)
+        let dir = URL.applicationSupportDirectory.appending(path: "Pilothouse", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appending(path: "services.json")
-        // One-time migration from the app's pre-release name.
-        let legacy = URL.applicationSupportDirectory.appending(path: "nbz360/services.json")
-        if !FileManager.default.fileExists(atPath: file.path), FileManager.default.fileExists(atPath: legacy.path) {
-            try? FileManager.default.copyItem(at: legacy, to: file)
+        // One-time migration from earlier names of the app.
+        for old in ["Arrcade", "nbz360"] {
+            let legacy = URL.applicationSupportDirectory.appending(path: "\(old)/services.json")
+            if !FileManager.default.fileExists(atPath: file.path), FileManager.default.fileExists(atPath: legacy.path) {
+                try? FileManager.default.copyItem(at: legacy, to: file)
+            }
         }
         return file
     }()
 
     private init() {
         load()
+        if let raw = UserDefaults.standard.dictionary(forKey: "activeInstances") as? [String: String] {
+            for (k, v) in raw { if let kind = ServiceKind(rawValue: k), let id = UUID(uuidString: v) { activeIDs[kind] = id } }
+        }
         rebuildStores()
     }
 
     // MARK: Config
 
-    func config(_ kind: ServiceKind) -> ServiceConfig? {
-        services.first { $0.kind == kind }
+    /// Enabled + complete instances of a service, in user order.
+    func instances(_ kind: ServiceKind) -> [ServiceConfig] {
+        services.filter { $0.kind == kind && $0.isConfigured }
     }
 
-    func isConfigured(_ kind: ServiceKind) -> Bool { config(kind)?.isConfigured ?? false }
+    /// All saved connections of a kind (including disabled/incomplete ones).
+    func connections(_ kind: ServiceKind) -> [ServiceConfig] {
+        services.filter { $0.kind == kind }
+    }
+
+    /// The active instance's config.
+    func config(_ kind: ServiceKind) -> ServiceConfig? {
+        let list = instances(kind)
+        if let id = activeIDs[kind], let c = list.first(where: { $0.id == id }) { return c }
+        return list.first ?? connections(kind).first
+    }
+
+    func activeID(_ kind: ServiceKind) -> UUID? { config(kind)?.id }
+
+    func setActive(_ kind: ServiceKind, _ id: UUID) {
+        activeIDs[kind] = id
+        UserDefaults.standard.set(Dictionary(uniqueKeysWithValues: activeIDs.map { ($0.key.rawValue, $0.value.uuidString) }), forKey: "activeInstances")
+    }
+
+    func isConfigured(_ kind: ServiceKind) -> Bool { !instances(kind).isEmpty }
 
     var hasAnyService: Bool { services.contains { $0.isConfigured } }
 
@@ -143,26 +195,35 @@ final class AppModel {
         section.requires.allSatisfy(isConfigured)
     }
 
+    /// Insert or update a connection (matched by id).
     func upsert(_ config: ServiceConfig) {
-        if let i = services.firstIndex(where: { $0.kind == config.kind }) {
+        if let i = services.firstIndex(where: { $0.id == config.id }) {
             services[i] = config
         } else {
             services.append(config)
         }
         save()
-        rebuildStores(only: config.kind)
+        rebuildStores()
     }
 
-    func remove(_ kind: ServiceKind) {
-        services.removeAll { $0.kind == kind }
-        save()
-        rebuildStores(only: kind)
-    }
-
-    func replaceAll(_ configs: [ServiceConfig]) {
-        services = configs
+    func remove(id: UUID) {
+        services.removeAll { $0.id == id }
         save()
         rebuildStores()
+    }
+
+    func move(kind: ServiceKind, from: IndexSet, to: Int) {
+        var list = connections(kind)
+        list.move(fromOffsets: from, toOffset: to)
+        services = services.filter { $0.kind != kind } + list
+        save()
+        rebuildStores()
+    }
+
+    /// Suggested name for a new connection ("Radarr", "Radarr 2", …).
+    func suggestedName(_ kind: ServiceKind) -> String {
+        let n = connections(kind).count
+        return n == 0 ? kind.displayName : "\(kind.displayName) \(n + 1)"
     }
 
     private func load() {
@@ -183,20 +244,25 @@ final class AppModel {
         }
     }
 
-    private func rebuildStores(only kind: ServiceKind? = nil) {
-        func want(_ k: ServiceKind) -> ServiceConfig? {
-            guard let c = config(k), c.isConfigured else { return nil }
-            return c
+    /// Re-create stores for new/changed connections, keep the others (and their caches).
+    private func rebuildStores() {
+        func sync<S>(_ kind: ServiceKind, _ dict: inout [UUID: S], config: (S) -> ServiceConfig, make: (ServiceConfig) -> S, drop: (S) -> Void = { _ in }) {
+            let wanted = instances(kind)
+            for (id, store) in dict where !wanted.contains(where: { $0.id == id && $0 == config(store) }) {
+                drop(store)
+                dict[id] = nil
+            }
+            for c in wanted where dict[c.id] == nil { dict[c.id] = make(c) }
         }
-        if kind == nil || kind == .radarr { radarr = want(.radarr).map(RadarrStore.init) }
-        if kind == nil || kind == .sonarr { sonarr = want(.sonarr).map(SonarrStore.init) }
-        if kind == nil || kind == .seerr { seerr = want(.seerr).map(SeerrStore.init) }
-        if kind == nil || kind == .prowlarr { prowlarr = want(.prowlarr).map(ProwlarrStore.init) }
-        if kind == nil || kind == .qbittorrent {
-            torrents?.stop()
-            torrents = want(.qbittorrent).map(TorrentStore.init)
-            torrents?.startBackground()
-        }
+        sync(.radarr, &radarrStores, config: { $0.config }, make: RadarrStore.init)
+        sync(.sonarr, &sonarrStores, config: { $0.config }, make: SonarrStore.init)
+        sync(.seerr, &seerrStores, config: { $0.config }, make: SeerrStore.init)
+        sync(.prowlarr, &prowlarrStores, config: { $0.config }, make: ProwlarrStore.init)
+        sync(.qbittorrent, &torrentStores, config: { $0.config }, make: { c in
+            let s = TorrentStore(config: c)
+            s.startBackground()
+            return s
+        }, drop: { $0.stop() })
     }
 
     // MARK: Toasts

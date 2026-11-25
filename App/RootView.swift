@@ -1,5 +1,5 @@
 import SwiftUI
-import ArrcadeKit
+import PilothouseKit
 
 struct RootView: View {
     @Environment(AppModel.self) private var app
@@ -41,8 +41,14 @@ struct RootView: View {
                 if !app.hasAnyService {
                     WelcomeView()
                 } else {
-                    detail(for: app.selection ?? .dashboard)
-                        .id(app.selection)
+                    let section = app.selection ?? .dashboard
+                    detail(for: section)
+                        .id("\(section.rawValue)-\(section.requires.first.flatMap { app.activeID($0)?.uuidString } ?? "")")
+                        .toolbar {
+                            if let kind = section.requires.first, app.instances(kind).count > 1 {
+                                ToolbarItem(placement: .navigation) { InstancePicker(kind: kind) }
+                            }
+                        }
                 }
             }
             .overlay(alignment: .bottom) { ToastOverlay() }
@@ -137,7 +143,7 @@ struct WelcomeView: View {
                 .foregroundStyle(.tint)
                 .padding(26)
                 .glassEffect(.regular.tint(.accentColor.opacity(0.15)), in: .circle)
-            Text("Welcome to Arrcade").font(.largeTitle.bold())
+            Text("Welcome to Pilothouse").font(.largeTitle.bold())
             Text("Control Radarr, Sonarr, Seerr, Prowlarr and qBittorrent from one native Mac app.\nImport your nzb360 Android backup or add servers manually.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -153,5 +159,32 @@ struct WelcomeView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+/// Switches which server a section shows when several are configured.
+struct InstancePicker: View {
+    let kind: ServiceKind
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Menu {
+            ForEach(app.instances(kind)) { c in
+                Button {
+                    app.setActive(kind, c.id)
+                } label: {
+                    if app.activeID(kind) == c.id { Label(c.name, systemImage: "checkmark") } else { Text(c.name) }
+                }
+            }
+            Divider()
+            SettingsLink { Text("Manage Connections…") }
+        } label: {
+            Label(app.config(kind)?.name ?? kind.displayName, systemImage: kind.symbol)
+                .labelStyle(.titleAndIcon)
+        }
+        .menuStyle(.button)
+        .fixedSize()
+        .help("Choose which \(kind.displayName) server to show")
     }
 }

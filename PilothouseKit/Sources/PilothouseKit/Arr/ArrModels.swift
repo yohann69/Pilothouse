@@ -24,6 +24,9 @@ public struct ArrHealth: Codable, Sendable, Hashable, Identifiable {
     public var message: String
     public var wikiUrl: String?
     public var id: String { (source ?? "") + message }
+    public init(source: String?, type: String, message: String, wikiUrl: String?) {
+        self.source = source; self.type = type; self.message = message; self.wikiUrl = wikiUrl
+    }
     public var isError: Bool { type.lowercased() == "error" }
 }
 
