@@ -1,0 +1,39 @@
+name: Arrcade
+options:
+  bundleIdPrefix: io.github.yohann69
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  ArrcadeKit:
+    path: ArrcadeKit
+targets:
+  Arrcade:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: ArrcadeKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.yohann69.arrcade
+        PRODUCT_NAME: Arrcade
+        SWIFT_VERSION: "6.0"
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      configs:
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          SWIFT_COMPILATION_MODE: wholemodule

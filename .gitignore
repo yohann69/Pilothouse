@@ -1,0 +1,17 @@
+# Build output
+build/
+.build/
+DerivedData/
+*.zip
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+
+# Never commit backups or settings with API keys
+nzb360_backup*/
+*.bkp
+services.json
+
+.DS_Store
